@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>REGA MAPA - Topologia Viva</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #050810;
+            --card-bg: rgba(30, 41, 59, 0.85);
+            --text-primary: #ffffff;
+            --text-secondary: #cbd5e1;
+            --accent: #38bdf8;
+            --color-dry: #ff0000; /* More vibrant red */
+            --color-ideal: #00ff00; /* More vibrant green */
+            --color-wet: #0077ff;
+            --color-offline: #475569;
+            --color-border: rgba(255,255,255,1.0); /* Solid white border for high visibility */
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Inter', 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(56, 189, 248, 0.08) 0px, transparent 50%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding-bottom: 2rem;
+            overflow-x: hidden;
+        }
+
+        header { padding: 0.5rem 1.5rem 0.2rem 1.5rem; text-align: center; }
+        header h1 { font-size: 1.8rem; font-weight: 800; letter-spacing: -0.02em; background: linear-gradient(135deg, #fff 0%, var(--accent) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.2rem; }      
+        #uptime-display { font-size: 0.85rem; color: var(--text-secondary); margin-top: 5px; opacity: 1; font-weight: 600; }
+
+        /* 16-Sensor Highlight Grid */
+        .highlight-grid-section {
+            max-width: 600px;
+            margin: 0 auto 1.5rem auto;
+            text-align: center;
+        }
+        .highlight-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            background: rgba(15, 23, 42, 0.6);
+            padding: 1.5rem;
+            border-radius: 1.5rem;
+            border: 1px solid var(--color-border);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5), 0 0 20px rgba(56, 189, 248, 0.05);
+        }
+        .grid-box {
+            aspect-ratio: 1;
+            border-radius: 1rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85rem;
+            font-weight: 800;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border: 1px solid rgba(255,255,255,0.1);
+            background: #111827;
+            color: rgba(255,255,255,0.2);
+            position: relative;
+        }
+        .grid-box:hover { transform: scale(1.1); z-index: 2; border-color: var(--accent); box-shadow: 0 0 25px rgba(56, 189, 248, 0.3); }
+        .grid-label { font-size: 0.55rem; text-transform: uppercase; opacity: 0.6; margin-bottom: 2px; }
+        .faded { opacity: 0.88 !important; } /* Higher opacity for legibility */
+
+        /* Tree Layout */
+        .topology-tree {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.8rem;
+            padding: 1rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .tree-node { display: flex; flex-direction: column; align-items: center; width: 100%; margin-bottom: 0.5rem; }
+
+        /* Connecting Lines (Removed) */
+
+        /* Card Styles */
+        .main-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 2px solid var(--color-border);
+            border-radius: 1rem;
+            padding: 1.2rem 2rem;
+            min-width: 250px;
+            text-align: center;
+            box-shadow: 0 15px 45px rgba(0,0,0,0.6), inset 0 0 15px rgba(255,255,255,0.05);
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 10;
+            cursor: pointer;
+        }
+        .main-card:hover { transform: scale(1.05); border-color: #ffffff; box-shadow: 0 25px 55px rgba(0,0,0,0.7), 0 0 30px rgba(56, 189, 248, 0.3); }
+
+        .tag { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); opacity: 0.9; margin-bottom: 4px; display: block; font-weight: 800; }
+        .led-glow-green .tag, .led-glow-red .tag, .led-glow-blue .tag { color: #000; opacity: 1; }
+        .led-glow-gray .tag { color: var(--accent); opacity: 0.8; }
+        .node-name { font-size: 1.1rem; font-weight: 700; }
+
+        .controls-row { display: flex; flex-direction: row; gap: 1rem; justify-content: center; width: 100%; margin-top: 0.5rem; flex-wrap: wrap; }
+
+        .control-hub {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            position: relative;
+            background: rgba(15, 23, 42, 0.4);
+            padding: 1.2rem;
+            border-radius: 2rem;
+            border: 1px dashed rgba(255,255,255,0.15);
+            transition: all 0.3s;
+        }
+        .control-hub:hover { border-color: var(--accent); background: rgba(15, 23, 42, 0.6); }
+
+        /* Macro Capsules */
+        .macro-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.8rem;
+            width: 100%;
+            max-width: 320px;
+        }
+
+        .macro-box {
+            background: rgba(30, 41, 59, 0.4);
+            border: 1px solid var(--color-border);
+            padding: 0.8rem 1.2rem;
+            border-radius: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            transition: 0.3s;
+            position: relative;
+            min-width: 140px;
+        }
+        .macro-box:hover { transform: translateY(-3px); }
+
+        .macro-icon { width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 1rem; }
+        .macro-label { font-size: 0.85rem; font-weight: 600; color: inherit; }
+        .macro-count { font-size: 0.7rem; color: inherit; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 10px; }
+
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.2); }
+        .c-green { background: var(--color-ideal); box-shadow: 0 0 10px var(--color-ideal); color: #000 !important; }
+        .c-red { background: var(--color-dry); box-shadow: 0 0 10px var(--color-dry); color: #fff !important; }
+        .c-blue { background: var(--color-wet); box-shadow: 0 0 10px var(--color-wet); color: #fff !important; }
+        .c-yellow { background: #ff9800; box-shadow: 0 0 10px #ff9800; color: #000 !important; }
+        .c-gray { background: var(--color-offline); color: var(--text-dim) !important; }
+        .relay-led { width: 12px; height: 12px; border-radius: 3px; cursor: pointer; transition: all 0.2s; }
+        .relay-led:hover { transform: scale(1.2); }
+
+        /* Status Colors - Vibrant full backgrounds */
+        .mb-green, .led-glow-green { background: #00ff00 !important; color: #050810 !important; border-color: #00ff00 !important; font-weight: 900; box-shadow: 0 0 15px rgba(0,255,0,0.4); }
+        .mb-red, .led-glow-red { background: #ff0000 !important; color: white !important; border-color: #ff0000 !important; box-shadow: 0 0 15px rgba(255,0,0,0.4); }
+        .mb-blue, .led-glow-blue { background: #0077ff !important; color: white !important; border-color: #0077ff !important; box-shadow: 0 0 15px rgba(0,119,255,0.4); }
+        .mb-gray, .led-glow-gray { background: rgba(51, 65, 85, 0.6) !important; color: #94a3b8 !important; border-color: rgba(255,255,255,0.15) !important; }
+        .mb-yellow, .led-glow-yellow { background: #ff9800 !important; color: #050810 !important; border-color: #ff9800 !important; font-weight: 900; box-shadow: 0 0 15px rgba(255, 152, 0, 0.4); }
+
+        /* Level 4: Sensor Micro Grid */
+        .sensor-drawer {
+            width: 100%;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.4rem;
+            margin-top: 0.5rem;
+            padding: 0.8rem;
+            padding-top: 2rem; /* Space for X */
+            background: rgba(15, 23, 42, 0.7);
+            border-radius: 1.5rem;
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            backdrop-filter: blur(8px);
+            animation: fadeIn 0.4s ease-out;
+            max-width: 400px;
+            position: relative;
+        }
+        .drawer-close { position: absolute; top: 0.8rem; right: 1.2rem; cursor: pointer; color: var(--text-secondary); font-weight: bold; font-size: 1.2rem; }
+        .drawer-close:hover { color: var(--color-dry); }
+
+        .sensor-mini-card {
+            background: var(--card-bg);
+            border: 1px solid var(--color-border);
+            padding: 2px;
+            border-radius: 0.6rem;
+            text-align: center;
+            cursor: pointer;
+            transition: 0.3s;
+            position: relative;
+            aspect-ratio: 1.1; 
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 1px;
+        }
+        .sensor-mini-card:hover { transform: scale(1.1); z-index: 5; }
+        .sensor-mini-card .did { font-weight: 900; font-size: 0.75rem; color: inherit; line-height: 1; }
+        .sensor-mini-card .label { font-size: 0.45rem; color: inherit; opacity: 0.7; display: block; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px; }
+        
+        /* Moisture bars with labels */
+        .layer-row { margin-bottom: 2.2rem; }
+        .layer-label { font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); display: flex; justify-content: space-between; margin-bottom: 10px; }
+        .progress-bg { height: 14px; background: rgba(0,0,0,0.5); border-radius: 7px; overflow: visible; position: relative; border: 1px solid rgba(255,255,255,0.2); }
+        .progress-bar { height: 100%; border-radius: 9px; transition: width 1s; }
+        .threshold-marker { position: absolute; top: -6px; bottom: -6px; width: 2px; background: #fff; z-index: 10; box-shadow: 0 0 8px rgba(255,255,255,0.6); }
+        
+        .marker-val {
+            position: absolute;
+            top: -20px;
+            font-size: 0.7rem;
+            font-weight: 800;
+            color: #fff;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.4);
+            padding: 1px 4px;
+            border-radius: 4px;
+        }
+        
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-top: 1rem; }
+        .stat-box { background: rgba(15, 23, 42, 1); border: 2px solid rgba(255,255,255,0.4); padding: 0.8rem; border-radius: 0.8rem; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.4); }
+        .stat-val { font-size: 1.1rem; font-weight: 800; color: #ffffff; }
+        .stat-lbl { font-size: 0.75rem; color: var(--accent); display: block; font-weight: 700; text-transform: uppercase; margin-bottom: 2px; }
+        
+        .bg-ideal { background: var(--color-ideal) !important; }
+        .bg-dry { background: var(--color-dry) !important; }
+        .bg-wet { background: var(--color-wet) !important; }
+
+        .threshold-lbls { display: none; }
+
+        /* Detail Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 22, 40, 0.3); 
+            backdrop-filter: blur(6px) saturate(140%);
+            -webkit-backdrop-filter: blur(6px) saturate(140%);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            padding: 20px;
+            animation: fadeIn 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+        }
+        .modal-content {
+            background: var(--bg-color);
+            border: 1px solid var(--color-border);
+            border-radius: 1.5rem;
+            max-width: 950px;
+            width: 95%;
+            padding: 2.5rem;
+            position: relative;
+            box-shadow: 0 30px 80px rgba(0,0,0,0.8);
+            max-height: 95vh;
+            overflow-y: auto;
+        }
+        .modal-grid { display: flex; gap: 3rem; align-items: flex-start; flex-wrap: wrap; }
+        .modal-info { flex: 1; min-width: 320px; }
+        .modal-charts { flex: 1.2; min-width: 320px; display: flex; flex-direction: column; gap: 1.5rem; }
+        .close-btn { position: absolute; top: 20px; right: 20px; cursor: pointer; color: var(--text-secondary); font-size: 1.5rem; }
+
+        .relay-dots { display: flex; gap: 15px; justify-content: center; margin-top: 1rem; }
+        .relay-item { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .relay-num { font-size: 0.6rem; color: var(--text-secondary); font-weight: 800; }
+        .dot { width: 14px; height: 14px; border-radius: 50%; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); }
+        .dot.on { background: var(--color-ideal); box-shadow: 0 0 12px var(--color-ideal); border: none; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        .icon-svg { vertical-align: middle; margin-right: 6px; }
+
+        /* Chart Styles */
+        .chart-container { background: rgba(15, 23, 42, 0.5); border-radius: 1.2rem; padding: 18px; border: 1px solid var(--color-border); }
+        .chart-title { font-size: 0.75rem; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 15px; opacity: 0.9; }
+        canvas { width: 100% !important; height: 240px !important; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>REGA MAPA</h1>
+        <div id="uptime-display">Rede Ativa | <span id="node-count">--</span> Dispositivos | Hora: <span id="server-time" style="color:#38bdf8; font-weight:bold;">--:--</span> | Versão 4.2.1 (21/04)</div>
+    </header>
+
+    <div id="app">
+        <div class="topology-tree" id="tree">
+            <!-- Rendered via JS -->
+        </div>
+    </div>
+
+    <!-- Modal for Detailed View -->
+    <div id="detail-modal" class="modal-overlay">
+        <div class="modal-content" id="modal-body"></div>
+    </div>
+
+    <script>
+        let gatewayIP = ""; // Empty means same host (local SD serving)
+        
+        // Auto-detect if we are NOT running on the local ESP32
+        if (location.hostname !== "" && location.hostname !== "localhost" && !location.hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+            gatewayIP = localStorage.getItem("regaGatewayIP");
+            if (!gatewayIP) {
+                gatewayIP = prompt("REGA CLOUD: Insira o IP Local do seu LINK (ex: 192.168.1.15):", "192.168.1.15");
+                if (gatewayIP) localStorage.setItem("regaGatewayIP", gatewayIP);
+            }
+        }
+        
+        const apiBase = gatewayIP ? `http://${gatewayIP}` : "";
+
+        let state = {
+            nodes: [],
+            currentMillis: 0,
+            expandedGroup: null, 
+            selectedNodeDID: null,
+            serverMinutes: -1, 
+            charts: {} // Store chart instances
+        };
+
+        function formatUptime(ms) {
+            let totalSeconds = Math.floor(ms / 1000);
+            let mins = Math.floor(totalSeconds / 60);
+            let h = Math.floor(mins / 60);
+            let m = mins % 60;
+            let d = Math.floor(h / 24);
+            h = h % 24;
+            let mo = Math.floor(d / 30);
+            d = d % 30;
+            
+            let res = [];
+            if (mo > 1) res.push(`${mo}meses`);
+            else if (mo === 1) res.push(`1mês`);
+            if (d > 0) res.push(`${d}d`);
+            if (h > 0) res.push(`${h}h`);
+            res.push(`${m}min`);
+            return res.join(' ');
+        }
+
+        const NODE_TYPES = {
+            1: 'LINK',
+            2: 'CONTROL',
+            3: 'SOLO',
+            4: 'ATMOS',
+            5: 'HIDRO',
+            6: 'ENERGIA'
+        };
+
+        function parseDID(did) {
+            if (typeof did === 'string' && did.startsWith('0x')) return parseInt(did, 16);
+            return parseInt(did);
+        }
+
+        function formatDID(did) {
+            const num = parseDID(did);
+            return num.toString(16).toUpperCase().padStart(2, '0');
+        }
+
+        async function update() {
+            try {
+                const upMsg = await fetch(`${apiBase}/uptime?t=${Date.now()}`);
+                const upText = await upMsg.text();
+                const upParts = upText.split(',');
+                state.currentMillis = parseInt(upParts[0]);
+                if (upParts.length > 1) {
+                    const tParts = upParts[1].split(':');
+                    state.serverMinutes = parseInt(tParts[0]) * 60 + parseInt(tParts[1]);
+                    document.getElementById('server-time').innerText = upParts[1];
+                }
+                // Extract DOY if provided by server (3rd field)
+                if (upParts.length > 2) {
+                    state.currentDOY = parseInt(upParts[2]);
+                } else {
+                    // Fallback: compute from browser
+                    const now = new Date();
+                    const start = new Date(now.getFullYear(), 0, 0);
+                    state.currentDOY = Math.floor((now - start) / 86400000);
+                }
+                
+                const listMsg = await fetch(`${apiBase}/topology?t=${Date.now()}`);
+                const files = await listMsg.json();
+                
+                const newNodes = [];
+                for(const f of files) {
+                    try {
+                        const n = await (await fetch(`${apiBase}/topology/${f}?t=${Date.now()}`)).json();
+                        newNodes.push(n);
+                    } catch(e) {}
+                }
+                
+                const validNodes = newNodes.map(n => ({
+                    ...n,
+                    did: parseDID(n.did),
+                    parent_did: parseDID(n.parent_did)
+                })).filter(n => n.did <= 0x5F || n.type === 1 || n.type === 2); // Exclude ghosts from active topology view but keep them in state if needed, wait, state.nodes is used by cleanGhostNodes. Let's keep them in state.nodes but filter them in the node count.
+
+                state.nodes = newNodes.map(n => ({
+                    ...n,
+                    did: parseDID(n.did),
+                    parent_did: parseDID(n.parent_did)
+                }));
+                const validCount = state.nodes.filter(n => n.did <= 0x5F || n.type === 1 || n.type === 2).length;
+                document.getElementById('node-count').innerText = validCount;
+                render();
+            } catch(e) {
+                console.error("Update loop error:", e);
+            }
+        }
+
+        function isNodeOffline(n) {
+            if (n.did === 1) return false;
+            const threshold = (n.wakeup_solo && n.wakeup_solo > 0) ? (n.wakeup_solo * 1000 * 2.5 + 180000) : 900000;
+            return (state.currentMillis - n.last_seen_ms) > threshold || n.last_seen_ms > (state.currentMillis + 10000) || n.last_seen_ms === 0;
+        }
+
+        function getNodeStatus(n) {
+            if (isNodeOffline(n)) return 'gray';
+            if (n.type === 1) { // LINK
+                const isStale = (state.currentMillis - n.last_seen_ms) > 300000;
+                return (!isStale) ? 'green' : 'yellow';
+            }
+            if (n.type === 2) return 'green'; 
+        if (n.type === 3) {
+            const hums = n.humidity || [0,0,0];
+            let th = n.thresholds || {};
+            // Safety: if thresholds are missing or zero, use defaults for visualization
+            if (!th.surface || (th.surface[0] === 0 && th.surface[1] === 0)) {
+                th = { surface: [35,65], medium: [35,65], deep: [35,65] };
+            }
+            const keys = ['surface', 'medium', 'deep'];
+            let worst = 'green';
+            let allZero = true;
+            for(let i=0; i<3; i++){
+                const val = hums[i];
+                if (val > 0) allZero = false;
+                const limits = th[keys[i]];
+                if (val < limits[0]) return 'red';
+                if (val > limits[1]) worst = 'blue';
+            }
+            if (allZero) return 'gray'; // Sensors all at 0% should be considered inactive/offline
+            return worst;
+        }
+            return 'green';
+        }
+
+        function toggleGroup(ctrlDID, type) {
+            const key = `${ctrlDID}-${type}`;
+            state.expandedGroup = (state.expandedGroup === key) ? null : key;
+            render();
+        }
+
+        function openDetail(did) {
+            const n = state.nodes.find(x => x.did === did);
+            if (!n) return;
+            const modal = document.getElementById('detail-modal');
+            const body = document.getElementById('modal-body');
+            
+            let lastSeen = 'Nunca';
+            if (n.last_seen_str) {
+                lastSeen = n.last_seen_str === "??:??:??" ? "Aguardando NTP" : n.last_seen_str;
+            } else if (n.last_seen_ms > 0) {
+                const ageMs = state.currentMillis - n.last_seen_ms;
+                lastSeen = new Date(Date.now() - ageMs).toLocaleTimeString();
+            }
+
+            let html = `
+                <span class="close-btn" onclick="closeModal()">&times;</span>
+                <div class="modal-grid">
+                    <div class="modal-info">
+                        <span class="tag">${NODE_TYPES[n.type]}</span>
+                        <h2 class="node-name" style="font-size: 2rem; margin-bottom: 0.5rem;">${formatDID(n.did)}</h2>
+                        ${n.did !== 0x01 ? `<button onclick="deleteNode(${n.did})" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444; padding: 4px 12px; border-radius: 6px; font-size: 0.7rem; font-weight: bold; cursor: pointer; margin-bottom: 1.5rem; transition: 0.3s;" onmouseover="this.style.background='#ef4444';this.style.color='white'" onmouseout="this.style.background='rgba(239, 68, 68, 0.2)';this.style.color='#ef4444'">DELETAR NODO FANTASMA</button>` : ''}
+                        <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom: 1.5rem;">
+                             Msg: #${n.nmsg || 0} | Sinc: <span style="color:var(--accent); font-weight:bold;">${lastSeen}</span>
+                        </p>
+                        <hr style="border:0; border-top:1px solid var(--color-border); margin-bottom: 1.5rem;">
+            `;
+
+            if (n.type === 3) {
+                const layers = ['Superfície', 'Média', 'Profunda'];
+                const hums = n.humidity || [0,0,0];
+                let th = n.thresholds || {};
+                if (!th.surface || (th.surface[0] === 0 && th.surface[1] === 0)) {
+                    th = { surface: [35,65], medium: [35,65], deep: [35,65] };
+                }
+                const keys = ['surface', 'medium', 'deep'];
+                const parentHub = state.nodes.find(ph => ph.did === n.parent_did);
+                const modeStr = parentHub ? ['?','AUTO','TIMER','MANUAL','OFF'][n.mode_op || 3] : 'MANUAL';
+                const relayStatus = parentHub ? (parentHub.relay_status || []) : [];
+
+                html += `
+                    <div class="stat-grid" style="margin-bottom: 2rem;">
+                        <div class="stat-box"><span class="stat-lbl">Temp Solo</span><span class="stat-val">${n.tempC || 0}ºC</span></div>
+                        <div class="stat-box"><span class="stat-lbl">Sinal</span><span class="stat-val ${n.rssi < -85 ? 'c-red' : (n.rssi < -75 ? 'c-yellow' : 'c-green')}" style="padding: 2px 6px; border-radius: 4px;">${n.rssi || 0}dBm</span></div>
+                        <div class="stat-box" style="grid-column: span 2;">
+                            <span class="stat-lbl">Acionamento Relays</span>
+                            <div style="display:flex; justify-content:center; gap:12px; margin-top:5px;">
+                                ${n.mapped_relay !== -1 ? 
+                                    Array.from({length:8}, (_, i) => {
+                                        if (n.mapped_relay & (1 << i)) {
+                                            const isOn = relayStatus[i] === true;
+                                            return `
+                                                <div style="display:flex; align-items:center; gap:5px; background:rgba(0,0,0,0.3); padding:4px 8px; border-radius:8px; border:1px solid rgba(255,255,255,0.1)">
+                                                    <span style="font-size:0.75rem; font-weight:800; color:var(--accent)">R${i+1}</span>
+                                                    <div class="status-dot ${isOn ? 'c-green' : 'c-gray'}" style="width:10px; height:10px;"></div>
+                                                </div>
+                                            `;
+                                        }
+                                        return null;
+                                    }).filter(x => x).join('') : 
+                                    '<span style="font-size:0.8rem; opacity:0.5;">Nenhum Mapeado</span>'
+                                }
+                            </div>
+                        </div>
+                    </div>
+                `;
+                layers.forEach((l, i) => {
+                    const val = hums[i];
+                    const limits = th[keys[i]];
+                    const status = val < limits[0] ? 'dry' : (val > limits[1] ? 'wet' : 'ideal');
+                    html += `
+                        <div class="layer-row">
+                            <div class="layer-label"><span>${l}</span><span>${val}%</span></div>
+                            <div class="progress-bg">
+                                <div class="threshold-marker" style="left: ${limits[0]}%"><span class="marker-val">${limits[0]}</span></div>
+                                <div class="threshold-marker" style="left: ${limits[1]}%"><span class="marker-val">${limits[1]}</span></div>
+                                <div class="progress-bar bg-${status}" style="width: ${val}%"></div>
+                            </div>
+                        </div>
+                    `;
+                });
+            } else if (n.type === 2) {
+                html += `
+                    <div class="stat-grid" style="margin-bottom: 2rem;">
+                        <div class="stat-box"><span class="stat-lbl">Bateria Hub</span><span class="stat-val">${(n.batV || 0).toFixed(1)}V</span></div>
+                        <div class="stat-box"><span class="stat-lbl">Sinal LoRa</span><span class="stat-val">${n.rssi ? `${n.rssi}dBm` : '---'}</span></div>
+                        <div class="stat-box" style="grid-column: span 2;"><span class="stat-lbl">Intervalo Wakeup (Ciclo)</span><span class="stat-val">${(n.wakeup_solo/60) || 0} min</span></div>
+                    </div>
+                    <div style="text-align:center;">
+                        <span class="stat-lbl" style="display:block; margin-bottom:8px;">Modo de Operação & Relés (1-8)</span>
+                        <div style="display:flex; justify-content:center; flex-wrap:wrap; gap:10px; max-width:320px; margin:0 auto;">
+                            ${Array.from({length:8}, (_, i) => {
+                                const relays = n.relay_status || [];
+                                const modes = n.relay_modes || [];
+                                const s = relays[i] || false;
+                                const mode = modes[i] || 3;
+                                const modeLabels = ['?', 'AUTO', 'TIMER', 'MANUAL', 'OFF'];
+                                const modeColors = ['#94a3b8', '#38bdf8', '#f1c40f', '#94a3b8', '#ef4444'];
+                                return `
+                                <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+                                    <span style="font-size:0.6rem; color:var(--text-secondary);">R${i+1}</span>
+                                    <div class="relay-led ${s ? 'c-green' : 'c-gray'}" onclick="showRelayChart(${n.did}, ${i})" title="Modo: ${modeLabels[mode]} | Clique para histórico"></div>
+                                    <span style="font-size:0.65rem; font-weight:900; color:${modeColors[mode]}">${['?','A','T','M','X'][mode] || '?'}</span>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            } else if (n.type === 1) {
+                html += `
+                    <div class="stat-box" style="margin-top:1rem;">
+                        <span class="stat-lbl">Tempo de Atividade</span>
+                        <span class="stat-val" style="font-size:0.9rem;">${formatUptime(state.currentMillis)}</span>
+                    </div>
+                    <p style="margin-top:1.5rem; font-size:0.8rem; color:var(--text-secondary); line-height:1.6;">
+                        Este é o Gateway Central da rede REGA. Ele gerencia a ponte LoRa ↔ Wi-Fi e serve este dashboard.
+                    </p>
+                    <div style="margin-top: 1.5rem; text-align: center;">
+                        <button onclick="cleanGhostNodes()" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444; padding: 8px 16px; border-radius: 8px; font-size: 0.8rem; font-weight: bold; cursor: pointer; transition: 0.3s;" onmouseover="this.style.background='#ef4444';this.style.color='white'" onmouseout="this.style.background='rgba(239, 68, 68, 0.2)';this.style.color='#ef4444'">LIMPAR NODOS FANTASMAS (>0x5F)</button>
+                    </div>
+                `;
+            }
+
+            html += `</div>`; // End of modal-info
+
+            if (n.type === 2 || n.type === 3 || n.type === 4) {
+                html += `
+                    <div class="modal-charts">
+                        ${(n.type === 3 || n.type === 4) ? `
+                        <div class="chart-container">
+                            <div class="chart-title">UMIDADE e TEMPERATURA do SOLO</div>
+                            <canvas id="moistureChart"></canvas>
+                        </div>
+                        <div class="chart-container">
+                            <div class="chart-title">Bateria (V) & Sinal RSSI (dBm)</div>
+                            <canvas id="batteryChart"></canvas>
+                        </div>
+                        ` : ''}
+                        ${n.type === 2 ? `
+                        <div class="chart-container">
+                            <div class="chart-title">Sinal RSSI LoRa (LINK ↔ Hub)</div>
+                            <canvas id="rssiChart"></canvas>
+                        </div>
+                        ` : ''}
+                        <div id="relayHistoryContainer" class="chart-container" style="display:none; margin-top:1rem;">
+                            <div class="chart-title" id="relayChartTitle">Histórico do Relé (Lig/Desl)</div>
+                            <canvas id="relayChart"></canvas>
+                        </div>
+                    </div>
+                `;
+            }
+
+            html += `</div>`; // End of modal-grid
+
+            body.innerHTML = html;
+            modal.style.display = 'flex';
+            
+            if (n.type === 2 || n.type === 3 || n.type === 4) {
+                setTimeout(() => drawHistoryCharts(did), 100);
+            }
+        }
+
+        function showRelayChart(did, relayIdx) {
+            const container = document.getElementById('relayHistoryContainer');
+            container.style.display = 'block';
+            document.getElementById('relayChartTitle').innerText = `Histórico Relé ${relayIdx+1} (Estad./Tempo)`;
+            container.scrollIntoView({ behavior: 'smooth' });
+            drawHistoryCharts(did, relayIdx);
+        }
+
+        async function drawHistoryCharts(did, focusRelayIdx = -1) {
+            try {
+                const hexDID = did.toString(16).toUpperCase().padStart(2, '0');
+                const res = await fetch(`${apiBase}/history/node_${hexDID}.csv?t=${Date.now()}`);
+                if (!res.ok) { console.warn(`History file for #${did} not found.`); return; }
+                const text = await res.text();
+                console.log(`[DEBUG] History for #${did}: ${text.split('\n').length} lines content.`);
+                const lines = text.trim().split('\n');
+                console.log(`[DEBUG] History for #${did}: ${text.split('\n').length} lines.`);
+                
+                const h1=[], h2=[], h3=[], temp=[], bat=[], rssi=[], relayState=[];
+                const node = state.nodes.find(n => n.did === did);
+
+                const nowRef = (state.serverMinutes !== -1) ? state.serverMinutes : (new Date().getHours() * 60 + new Date().getMinutes());
+                const currentMinutes = nowRef;
+
+                // Today's day-of-year, used for reliable cross-midnight filtering
+                // state.currentDOY (from server /uptime endpoint) is used for DOY-aware filtering below.
+
+                lines.forEach((l, i) => {
+                    const cols = l.split(',');
+                    if (cols.length < 5) return;
+                    
+                    // New format: last column is "DDD HH:MM" (DOY + time)
+                    // Old format: last column is "HH:MM"
+                    const rawTime = cols.length >= 9 ? cols[8].trim() : "";
+                    if (!rawTime || !rawTime.includes(':')) return;
+
+                    let pointDOY = -1; // -1 means unknown
+                    let timeLabel;
+                    
+                    if (rawTime.includes(' ')) {
+                        // New DOY format: "DDD HH:MM"
+                        const parts = rawTime.split(' ');
+                        pointDOY = parseInt(parts[0]);
+                        timeLabel = parts[1].substring(0, 5);
+                    } else {
+                        // Legacy format: "HH:MM"
+                        timeLabel = rawTime.substring(0, 5);
+                    }
+
+                    if (!timeLabel || !timeLabel.includes(':')) return;
+                    const timeParts = timeLabel.split(':');
+                    const timeMin = parseInt(timeParts[0]) * 60 + parseInt(timeParts[1]);
+
+                    // Rolling 24h Logic with DOY awareness:
+                    // If we have DOY info, use it to place each point correctly relative to now.
+                    // currentDOY from server vs pointDOY tells us exactly how many days ago the point was.
+                    let xVal = timeMin;
+                    if (pointDOY !== -1 && state.currentDOY !== undefined) {
+                        const daysDiff = state.currentDOY - pointDOY;
+                        xVal = timeMin - (daysDiff * 1440); // Subtract minutes per day
+                    } else {
+                        // Legacy fallback: if point time > now + 10 min, it must be from yesterday
+                        if (xVal > currentMinutes + 10) { 
+                            xVal -= 1440;
+                        }
+                    }
+                    // Only include data from the last 24h window
+                    if (xVal < currentMinutes - 1440) return;
+
+                    h1.push({x: xVal, y: parseFloat(cols[0])});
+                    h2.push({x: xVal, y: parseFloat(cols[1])});
+                    h3.push({x: xVal, y: parseFloat(cols[2])});
+                    temp.push({x: xVal, y: parseFloat(cols[3])});
+                    bat.push({x: xVal, y: parseFloat(cols[4])});
+                    
+                    const activeBits = parseInt(cols[5]);
+                    let relVal = 0;
+                    if (focusRelayIdx !== -1) {
+                        relVal = (node && node.type === 2) ? ((activeBits >> focusRelayIdx) & 1) : activeBits;
+                    }
+                    relayState.push({x: xVal, y: relVal});
+
+                    let rVal = cols.length >= 8 ? parseFloat(cols[7]) : null;
+                    rssi.push({x: xVal, y: (rVal === 0 || rVal >= 0) ? null : rVal});
+                });
+
+                // Sort datasets by X to ensure lines don't criss-cross if data is out of order in CSV
+                const sortByX = (a, b) => a.x - b.x;
+                [h1, h2, h3, temp, bat, rssi, relayState].forEach(arr => arr.sort(sortByX));
+
+                const commonOptions = {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { 
+                        legend: { 
+                            display: true, 
+                            position: 'top',
+                            labels: { color: '#ffffff', font: { size: 10, weight: 'bold' }, boxWidth: 10, padding: 10 } 
+                        },
+                        tooltip: { 
+                            mode: 'index', 
+                            intersect: false,
+                            callbacks: {
+                                title: function(context) {
+                                    if (!context.length) return '';
+                                    let val = context[0].parsed.x;
+                                    while (val < 0) val += 1440;
+                                    while (val >= 1440) val -= 1440;
+                                    let hh = Math.floor(val / 60);
+                                    let mm = val % 60;
+                                    return String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: { border: { display: false }, grid: { color: 'rgba(255,255,255,0.2)' }, ticks: { color: '#ffffff', font: { size: 10 } } },
+                        x: { 
+                            type: 'linear',
+                            min: currentMinutes - 1440,
+                            max: currentMinutes,
+                            afterBuildTicks: (axis) => {
+                                const ticks = [];
+                                // Create a tick every 60 mins covering the full 24h window
+                                for (let v = Math.floor(axis.min / 60) * 60; v <= axis.max; v += 60) {
+                                    ticks.push({ value: v });
+                                }
+                                axis.ticks = ticks;
+                            },
+                            border: { display: true, color: 'rgba(255,255,255,0.3)' }, 
+                            grid: { 
+                                display: true, 
+                                color: (ctx) => {
+                                    if (!ctx.tick) return 'rgba(255,255,255,0.0)';
+                                    let v = Math.round(ctx.tick.value);
+                                    let norm = ((v % 1440) + 1440) % 1440;
+                                    // Use absolute check for robustness with 180 (3h)
+                                    return (norm % 180 === 0) ? 'rgba(56, 189, 248, 0.8)' : 'rgba(255,255,255,0.0)';
+                                },
+                                lineWidth: (ctx) => {
+                                    if (!ctx.tick) return 1;
+                                    let v = Math.round(ctx.tick.value);
+                                    let norm = ((v % 1440) + 1440) % 1440;
+                                    return (norm % 180 === 0) ? 2 : 1;
+                                }
+                            },
+                            title: { display: true, text: `JANELA TEMPORAL: ÚLTIMAS 24 HORAS`, color: 'rgba(255,255,255,0.4)', font: { size: 9, weight: 'bold' } },
+                            ticks: { 
+                                stepSize: 60, // Force a tick every hour to ensure 3h lines are hit
+                                callback: function(value) {
+                                    let norm = Math.round(value);
+                                    let n = ((norm % 1440) + 1440) % 1440;
+                                    if (n % 180 === 0) {
+                                        let hh = Math.floor(n / 60);
+                                        return String(hh).padStart(2, '0') + ':00';
+                                    }
+                                    return null;
+                                },
+                                display: true, color: '#ffffff', font: { size: 10, weight: 'bold' }, maxRotation: 0, autoSkip: false
+                            } 
+                        }
+                    },
+                    elements: { 
+                        line: { tension: 0.25, borderWidth: 3 }, 
+                        point: { radius: 3, hoverRadius: 6, hitRadius: 10, backgroundColor: 'white' } 
+                    }
+                };
+
+                if (document.getElementById('moistureChart')) {
+                    if (state.charts['moistureChart']) state.charts['moistureChart'].destroy();
+                    state.charts['moistureChart'] = new Chart(document.getElementById('moistureChart'), {
+                        type: 'line',
+                        data: {
+                            datasets: [
+                                { label: 'Superfície %', data: h1, borderColor: '#2ed573', backgroundColor: '#2ed573', fill: false },
+                                { label: 'Média %', data: h2, borderColor: '#f1c40f', backgroundColor: '#f1c40f', fill: false },
+                                { label: 'Profunda %', data: h3, borderColor: '#38bdf8', backgroundColor: '#38bdf8', fill: false },
+                                { label: 'Solo °C', data: temp, borderColor: '#ff4757', backgroundColor: '#ff4757', yAxisID: 'y1', fill: false }
+                            ]
+                        },
+                        options: {
+                            ...commonOptions,
+                            scales: {
+                                ...commonOptions.scales,
+                                y: { min: 0, max: 100, border: { display: true, color: '#ffffff' }, grid: { color: 'rgba(255,255,255,0.2)' }, ticks: { color: '#ffffff', font: { weight: 'bold'} } },
+                                y1: { type: 'linear', display: true, position: 'right', min: 0, max: 50, grid: { drawOnChartArea: false }, ticks: { color: '#ff4757', font: { weight: 'bold'} } }
+                            }
+                        }
+                    });
+                }
+
+                if (document.getElementById('batteryChart')) {
+                    if (state.charts['batteryChart']) state.charts['batteryChart'].destroy();
+                    state.charts['batteryChart'] = new Chart(document.getElementById('batteryChart'), {
+                        type: 'line',
+                        data: {
+                            datasets: [
+                                { label: 'Bateria (V)', data: bat, borderColor: '#ffa502', backgroundColor: '#ffa502', fill: false },
+                                { label: 'RSSI (dBm)', data: rssi, borderColor: '#a29bfe', backgroundColor: '#a29bfe', yAxisID: 'y1', fill: false, spanGaps: true },
+                                { label: 'Relé Principal', data: relayState, borderColor: '#2ed573', backgroundColor: '#2ed573', yAxisID: 'y2', stepped: true, fill: false }
+                            ]
+                        },
+                        options: {
+                            ...commonOptions,
+                            scales: {
+                                ...commonOptions.scales,
+                                y: { min: 2.5, max: 4.5, border: { display: false }, grid: { color: 'rgba(255,255,255,0.2)' }, ticks: { color: '#ffa502', font: { weight: 'bold' } } },
+                                y1: { type: 'linear', display: true, position: 'right', min: -110, max: -20, grid: { drawOnChartArea: false }, ticks: { color: '#a29bfe', font: { weight: 'bold' } } },
+                                y2: { type: 'linear', display: true, position: 'right', min: -0.1, max: 1.1, grid: { drawOnChartArea: false }, ticks: { color: '#2ed573', callback: (v) => v === 1 ? 'ON' : (v === 0 ? 'OFF' : '') } }
+                            }
+                        }
+                    });
+                }
+
+                if (document.getElementById('rssiChart')) {
+                    if (state.charts['rssiChart']) state.charts['rssiChart'].destroy();
+                    state.charts['rssiChart'] = new Chart(document.getElementById('rssiChart'), {
+                        type: 'line',
+                        data: {
+                            datasets: [
+                                { label: 'RSSI LoRa (dBm)', data: rssi, borderColor: '#38bdf8', backgroundColor: '#38bdf8', fill: false, spanGaps: true }
+                            ]
+                        },
+                        options: {
+                            ...commonOptions,
+                            scales: {
+                                ...commonOptions.scales,
+                                y: { min: -110, max: -20, border: { display: false }, grid: { color: 'rgba(255,255,255,0.2)' }, ticks: { color: '#ffffff', font: { weight: 'bold' } } }
+                            }
+                        }
+                    });
+                }
+
+                if (document.getElementById('relayChart') && focusRelayIdx !== -1) {
+                    if (state.charts['relayChart']) state.charts['relayChart'].destroy();
+                    state.charts['relayChart'] = new Chart(document.getElementById('relayChart'), {
+                        type: 'line',
+                        data: {
+                            datasets: [
+                                { label: 'Estado', data: relayState, borderColor: '#2ed573', backgroundColor: '#2ed573', stepped: true, fill: false }
+                            ]
+                        },
+                        options: {
+                            ...commonOptions,
+                            scales: {
+                                ...commonOptions.scales,
+                                y: { min: -0.1, max: 1.1, ticks: { color: '#64748b', callback: (v) => v === 1 ? 'ON' : (v === 0 ? 'OFF' : '') }, grid: { display: false } }
+                            }
+                        }
+                    });
+                }
+
+            } catch(e) { console.error("Chart Error:", e); }
+        }
+
+        async function deleteNode(did) {
+            // Ensure we have a clean hex string for display and a 0x string for the API
+            let hexDID = did;
+            if (typeof did === 'number') {
+                hexDID = "0x" + did.toString(16).toUpperCase().padStart(2, '0');
+            } else if (!did.startsWith('0x')) {
+                hexDID = "0x" + did;
+            }
+            const cleanID = hexDID.replace('0x', '');
+            
+            if (!confirm(`Deseja realmente remover o Nodo ${cleanID} do sistema?`)) return;
+            try {
+                const res = await fetch(`${apiBase}/delete?did=${hexDID}`);
+                if (res.ok) {
+                    closeModal();
+                    await update();
+                } else {
+                    alert("Erro ao deletar nodo.");
+                }
+            } catch(e) {
+                alert("Erro de conexão ao deletar.");
+            }
+        }
+
+        async function cleanGhostNodes() {
+            const ghosts = state.nodes.filter(n => n.did > 0x5F && n.type !== 1 && n.type !== 2);
+            if (ghosts.length === 0) {
+                alert("Nenhum nodo fantasma encontrado.");
+                return;
+            }
+            if (!confirm(`Foram encontrados ${ghosts.length} nodos fantasmas. Deseja deletá-los?`)) return;
+            
+            let successCount = 0;
+            for (const g of ghosts) {
+                let hexDID = "0x" + g.did.toString(16).toUpperCase().padStart(2, '0');
+                try {
+                    const res = await fetch(`${apiBase}/delete?did=${hexDID}`);
+                    if (res.ok) successCount++;
+                } catch(e) {}
+            }
+            alert(`${successCount} nodos deletados com sucesso.`);
+            closeModal();
+            update();
+        }
+
+        function closeModal() { document.getElementById('detail-modal').style.display = 'none'; }
+
+        function render() {
+            const tree = document.getElementById('tree');
+            const linkNode = state.nodes.find(n => n.did === 0x01);
+            if (!linkNode) { tree.innerHTML = "<div>Sincronizando LINK...</div>"; return; }
+
+            const linkStatus = getNodeStatus(linkNode);
+            const linkLedClass = `led-glow-${linkStatus}`;
+
+            let html = `
+                <div class="tree-node has-children">
+                    <div class="main-card ${linkLedClass}" onclick="openDetail(1)">
+                        <span class="tag">Gateway Central</span>
+                        <div class="node-name">REGA LINK</div>
+                        <div style="font-size: 0.65rem; color: var(--text-secondary); margin-top: 4px;">
+                            Sinc: <span style="color: var(--accent);">${linkNode?.last_seen_str || '---'}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="controls-row">
+            `;
+
+            const controls = state.nodes.filter(n => n.type === 2).sort((a,b) => a.did - b.did);
+            controls.forEach(ctrl => {
+                const isOff = isNodeOffline(ctrl);
+                const status = getNodeStatus(ctrl);
+                const isStale = isOff && ctrl.last_seen_ms > 0;
+                const ledClass = `led-glow-${status} ${isStale ? 'faded' : ''}`;
+                
+                html += `
+                    <div class="control-hub">
+                        <div class="tree-node has-children">
+                            <div class="main-card ${ledClass}" onclick="openDetail(${ctrl.did})">
+                                <span class="tag">Local Hub</span>
+                                <div class="node-name">CONTROL ${formatDID(ctrl.did)}</div>
+                            </div>
+                        </div>
+                        <div class="macro-container">
+                `;
+                const children = state.nodes.filter(n => n.parent_did === ctrl.did || (n.did >= 0x20 && (n.did >> 4) === (ctrl.did >> 4) + 1)); 
+                
+                const ICONS = {
+                    3: '🌱', 
+                    4: `<svg class="icon-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.1-3.9-4.4-.5-3.1-3.2-5.1-6.1-4.7-2.3.3-4.2 2-4.7 4.2C5.1 9.5 3 11 3 13.5 3 16 5 18 7.5 18h10"></path></svg>`,
+                    5: `<svg class="icon-svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path><path d="M16 11l3 3a4 4 0 0 1-5.66 5.66L12 18.34l-1.34 1.32a4 4 0 0 1-5.66-5.66l3-3z" opacity="0.6"></path></svg>`,
+                    6: `<svg class="icon-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line></svg>`
+                };
+
+                const groupTypes = [
+                    { t: 3, label: 'SOLO', count: 16, start: 0x20, icon: '🌱' }, 
+                    { t: 4, label: 'ATMOS', count: 8, start: 0x30, icon: `<svg class="icon-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.1-3.9-4.4-.5-3.1-3.2-5.1-6.1-4.7-2.3.3-4.2 2-4.7 4.2C5.1 9.5 3 11 3 13.5 3 16 5 18 7.5 18h10"></path></svg>` },
+                    { t: 5, label: 'HIDRO', count: 16, start: 0x40, icon: `<svg class="icon-svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path><path d="M16 11l3 3a4 4 0 0 1-5.66 5.66L12 18.34l-1.34 1.32a4 4 0 0 1-5.66-5.66l3-3z" opacity="0.6"></path></svg>` }, 
+                    { t: 6, label: 'ENERGIA', count: 16, start: 0x50, icon: `<svg class="icon-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line></svg>` }
+                ];
+
+                groupTypes.forEach(gt => {
+                    const nodesInGroup = children.filter(c => c.type === gt.t && c.did >= gt.start && c.did < gt.start + gt.count);
+                    let gStatus = 'gray';
+                    let isGroupOffline = nodesInGroup.length > 0; // Assume offline if empty slots but actually we only care about existing nodes
+
+                    if (nodesInGroup.length > 0) {
+                        gStatus = 'green';
+                        let offCount = 0;
+                        nodesInGroup.forEach(ng => {
+                            const s = getNodeStatus(ng);
+                            if (s === 'red') gStatus = 'red';
+                            else if (s === 'blue' && gStatus !== 'red') gStatus = 'blue';
+                            else if (s === 'gray') offCount++;
+                        });
+                        isGroupOffline = (offCount === nodesInGroup.length);
+                        if (isGroupOffline) gStatus = 'gray';
+                    }
+
+                    const isActive = state.expandedGroup === `${ctrl.did}-${gt.t}`;
+                    const mbClass = `mb-${gStatus} ${isGroupOffline ? 'faded' : ''}`;
+
+
+                    html += `
+                        <div class="macro-box ${isActive ? 'active' : ''} ${mbClass}" onclick="toggleGroup(${ctrl.did}, ${gt.t})">
+                            <div class="macro-label">${gt.icon} ${gt.label}</div>
+                            <div class="macro-count">${nodesInGroup.length}</div>
+                        </div>
+                    `;
+                });
+                html += `</div>`;
+                if (state.expandedGroup && state.expandedGroup.startsWith(`${ctrl.did}-`)) {
+                    const type = parseInt(state.expandedGroup.split('-')[1]);
+                    const gt = groupTypes.find(g => g.t === type);
+                    
+                    html += `
+                        <div class="sensor-drawer">
+                            <div class="drawer-close" onclick="toggleGroup(${ctrl.did}, ${type})">&times;</div>
+                    `;
+                    for(let i = 0; i < gt.count; i++) {
+                        const did = gt.start + i;
+                        const s = state.nodes.find(n => n.did === did);
+                        let classes = 'sensor-mini-card';
+                        let icon = gt.icon;
+                        if (s) {
+                            const sStatus = getNodeStatus(s);
+                            const isStale = isNodeOffline(s) || (s.last_seen_ms > 0 && isNodeOffline(s)); // Simplified check
+                            classes += ` led-glow-${sStatus} ${isNodeOffline(s) && s.last_seen_ms > 0 ? 'faded' : ''}`;
+                        } else {
+                            classes += ' led-glow-gray';
+                        }
+                        html += `
+                            <div class="${classes}" onclick="${s ? `openDetail(${did})` : ''}">
+                                <span class="label">${gt.label}</span>
+                                <div class="did">${s ? icon : ''}${formatDID(did)}</div>
+                            </div>
+                        `;
+                    }
+                    html += `</div>`;
+                }
+                html += `</div>`; // end of control-hub
+            });
+            html += `</div>`; // end of controls-row
+            tree.innerHTML = html;
+        }
+
+        setInterval(update, 5000);
+        update();
+    </script>
+</body>
+</html>
