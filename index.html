@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>REGA MAPA - Topologia Viva</title>
+    <title>REGA-MAPA</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
@@ -37,21 +37,7 @@
         header h1 { font-size: 1.8rem; font-weight: 800; letter-spacing: -0.02em; background: linear-gradient(135deg, #fff 0%, var(--accent) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.2rem; }      
         #uptime-display { font-size: 0.85rem; color: var(--text-secondary); margin-top: 5px; opacity: 1; font-weight: 600; }
         
-        .config-btn {
-            position: absolute;
-            top: 15px;
-            right: 25px;
-            background: rgba(255,255,255,0.1);
-            border: 1px solid var(--accent);
-            color: var(--accent);
-            padding: 5px 12px;
-            border-radius: 12px;
-            cursor: pointer;
-            font-size: 0.7rem;
-            font-weight: bold;
-            transition: 0.3s;
-        }
-        .config-btn:hover { background: var(--accent); color: #000; }
+
 
         /* 16-Sensor Highlight Grid */
         .highlight-grid-section {
@@ -202,8 +188,28 @@
             max-width: 400px;
             position: relative;
         }
-        .drawer-close { position: absolute; top: 0.8rem; right: 1.2rem; cursor: pointer; color: var(--text-secondary); font-weight: bold; font-size: 1.2rem; }
-        .drawer-close:hover { color: var(--color-dry); }
+        .drawer-close { 
+            position: absolute; 
+            top: -20px; 
+            right: -10px; 
+            cursor: pointer; 
+            color: var(--color-dry); 
+            font-weight: 900; 
+            font-size: 1.8rem; 
+            background: rgba(255,0,0,0.3); 
+            width: 42px; 
+            height: 42px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            border-radius: 50%;
+            z-index: 100;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            border: 2px solid var(--color-dry);
+            line-height: 1;
+            padding-bottom: 4px; /* Manual tweak for font baseline */
+        }
+        .drawer-close:hover { background: var(--color-dry); color: #fff; }
 
         .sensor-mini-card {
             background: var(--card-bg);
@@ -284,7 +290,27 @@
         .modal-grid { display: flex; gap: 3rem; align-items: flex-start; flex-wrap: wrap; }
         .modal-info { flex: 1; min-width: 320px; }
         .modal-charts { flex: 1.2; min-width: 320px; display: flex; flex-direction: column; gap: 1.5rem; }
-        .close-btn { position: absolute; top: 20px; right: 20px; cursor: pointer; color: var(--text-secondary); font-size: 1.5rem; }
+        .close-btn { 
+            position: absolute; 
+            top: 15px; 
+            right: 15px; 
+            cursor: pointer; 
+            color: var(--color-dry); 
+            font-weight: 900; 
+            font-size: 2rem; 
+            background: rgba(255,0,0,0.3); 
+            width: 45px; 
+            height: 45px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            border-radius: 50%;
+            z-index: 1100;
+            line-height: 1;
+            padding-bottom: 4px; /* Manual tweak for font baseline */
+            border: 2px solid var(--color-dry);
+        }
+        .close-btn:hover { background: var(--color-dry); color: #fff; }
 
         .relay-dots { display: flex; gap: 15px; justify-content: center; margin-top: 1rem; }
         .relay-item { display: flex; flex-direction: column; align-items: center; gap: 4px; }
@@ -304,8 +330,8 @@
 <body>
 
     <header>
-        <button class="config-btn" onclick="configIP()">⚙ CONFIG IP</button>
-        <h1>REGA MAPA</h1>
+
+        <h1>REGA-MAPA</h1>
         <div id="uptime-display">Rede Ativa | <span id="node-count">--</span> Dispositivos | Hora: <span id="server-time" style="color:#38bdf8; font-weight:bold;">--:--</span> | Versão 4.2.1 (21/04)</div>
     </header>
 
@@ -313,6 +339,11 @@
         <div class="topology-tree" id="tree">
             <!-- Rendered via JS -->
         </div>
+        <footer style="margin-top: 3rem; text-align: center; padding: 1rem; opacity: 0.6;">
+            <div id="debug-info" style="font-size: 0.6rem; color: #666; margin-bottom: 10px;"></div>
+            <div id="error-log" style="font-size: 0.75rem; color: #ff4444; font-weight: bold; margin-bottom: 10px;"></div>
+            <span style="font-size: 0.7rem; cursor: pointer; color: var(--accent);" onclick="configIP()">[ ⚙ Configuração de IP Local ]</span>
+        </footer>
     </div>
 
     <!-- Modal for Detailed View -->
@@ -321,8 +352,37 @@
     </div>
 
     <script>
+        // Emergency Reset via URL: rega-mapa.com.br/?reset=1
+        if (window.location.search.includes('reset=1')) {
+            localStorage.clear();
+            window.location.href = window.location.origin + window.location.pathname;
+        }
+
+        const isTunnel = location.hostname.includes('cloudflare') || location.hostname.includes('rega-mapa.com.br');
+        const isLocalLINK = location.hostname === "192.168.15.30";
+        const isMiniPC = location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname.startsWith("192.168.15.");
+        
+        // If we are on GitHub Pages, we MUST use the tunnel domain for data
+        const isGitHub = location.hostname.includes('github.io');
+        
         let gatewayIP = localStorage.getItem("regaGatewayIP") || "";
         
+        // Final API Base Logic:
+        // 1. If on the official domain (Tunnel), use relative paths (proxy mode).
+        // 2. If on GitHub, try to use rega-mapa.com.br if no local IP is set.
+        // 3. Otherwise use the manually configured gatewayIP.
+        let apiBase = "";
+        if (isTunnel) {
+            apiBase = ""; // Relative to the tunnel
+        } else if (isGitHub) {
+            apiBase = gatewayIP ? (gatewayIP.startsWith('http') ? gatewayIP : `https://${gatewayIP}`) : "https://rega-mapa.com.br";
+        } else if (gatewayIP) {
+            apiBase = gatewayIP.startsWith('http') ? gatewayIP : `http://${gatewayIP}`;
+        }
+
+        // Debug info
+        document.getElementById('debug-info').innerText = `Host: ${location.hostname} | apiBase: "${apiBase}" | isGitHub: ${isGitHub}`;
+
         function configIP() {
             let newIP = prompt("Insira o IP Local do seu REGA LINK:", gatewayIP || "192.168.15.30");
             if (newIP) {
@@ -331,13 +391,16 @@
             }
         }
 
-        // Auto-detect if we are NOT running on the local ESP32
-        if (!gatewayIP && location.hostname !== "" && location.hostname !== "localhost" && !location.hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) {
-             gatewayIP = prompt("REGA CLOUD: Insira o IP Local do seu LINK (ex: 192.168.15.30):", "192.168.15.30");
+        // Only prompt if we are NOT on the ESP32 and don't have a saved IP
+        if (!isESP32 && !gatewayIP && (location.hostname === "localhost" || location.hostname === "" || location.protocol === "file:")) {
+             gatewayIP = prompt("REGA DEV: Insira o IP Local do seu LINK (ex: 192.168.15.30):", "192.168.15.30");
              if (gatewayIP) localStorage.setItem("regaGatewayIP", gatewayIP);
         }
         
-        const apiBase = gatewayIP ? `http://${gatewayIP}` : "";
+        const apiBase = (isESP32) ? "" : (gatewayIP ? `http://${gatewayIP}` : "");
+
+        // Debug info
+        document.getElementById('debug-info').innerText = `Host: ${location.hostname} | apiBase: "${apiBase}" | isESP32: ${isESP32}`;
 
         let state = {
             nodes: [],
@@ -434,6 +497,7 @@
                 render();
             } catch(e) {
                 console.error("Update loop error:", e);
+                document.getElementById('error-log').innerText = `Erro de Conexão: ${e.message} (Verifique o IP do LINK ou o Túnel)`;
             }
         }
 
@@ -514,9 +578,16 @@
                     th = { surface: [35,65], medium: [35,65], deep: [35,65] };
                 }
                 const keys = ['surface', 'medium', 'deep'];
-                const parentHub = state.nodes.find(ph => ph.did === n.parent_did);
+                let parentHub = state.nodes.find(ph => ph.did === n.parent_did);
+                // Fallback: if parent_did is not set or 0, infer from DID range (e.g., SOLO 0x20-0x2F belongs to CTRL 0x10)
+                if ((!parentHub || n.parent_did === 0) && n.did >= 0x20) {
+                    const inferredParentDID = ((n.did >> 4) - 1) << 4; 
+                    parentHub = state.nodes.find(ph => ph.did === inferredParentDID);
+                }
+
                 const modeStr = parentHub ? ['?','AUTO','TIMER','MANUAL','OFF'][n.mode_op || 3] : 'MANUAL';
                 const relayStatus = parentHub ? (parentHub.relay_status || []) : [];
+                const relayModes = parentHub ? (parentHub.relay_modes || []) : [];
 
                 html += `
                     <div class="stat-grid" style="margin-bottom: 2rem;">
@@ -528,11 +599,15 @@
                                 ${n.mapped_relay !== -1 ? 
                                     Array.from({length:8}, (_, i) => {
                                         if (n.mapped_relay & (1 << i)) {
-                                            const isOn = relayStatus[i] === true;
+                                            const isOn = !!relayStatus[i];
+                                            const m = relayModes[i] || 3;
+                                            const mColor = ['#94a3b8', '#38bdf8', '#f1c40f', '#94a3b8', '#ef4444'][m];
+                                            const mLbl = ['?','A','T','M','X'][m];
                                             return `
-                                                <div style="display:flex; align-items:center; gap:5px; background:rgba(0,0,0,0.3); padding:4px 8px; border-radius:8px; border:1px solid rgba(255,255,255,0.1)">
-                                                    <span style="font-size:0.75rem; font-weight:800; color:var(--accent)">R${i+1}</span>
-                                                    <div class="status-dot ${isOn ? 'c-green' : 'c-gray'}" style="width:10px; height:10px;"></div>
+                                                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; background:rgba(0,0,0,0.3); padding:6px 10px; border-radius:10px; border:1px solid rgba(255,255,255,0.1)">
+                                                    <span style="font-size:0.65rem; font-weight:800; color:var(--text-secondary);">R${i+1}</span>
+                                                    <div class="relay-led ${isOn ? 'c-green' : 'c-gray'}"></div>
+                                                    <span style="font-size:0.75rem; font-weight:900; color:${mColor}">${mLbl}</span>
                                                 </div>
                                             `;
                                         }
@@ -542,6 +617,7 @@
                                 }
                             </div>
                         </div>
+                        <div class="chart-title" style="margin-top: 1.5rem; margin-bottom: 1rem; text-align: center;">Umidade do Solo</div>
                     </div>
                 `;
                 layers.forEach((l, i) => {
@@ -612,7 +688,7 @@
                             <canvas id="moistureChart"></canvas>
                         </div>
                         <div class="chart-container">
-                            <div class="chart-title">Bateria (V) & Sinal RSSI (dBm)</div>
+                            <div class="chart-title">Bateria (V), Sinal RSSI (dBm) e Relé Principal</div>
                             <canvas id="batteryChart"></canvas>
                         </div>
                         ` : ''}
@@ -719,6 +795,8 @@
                     let relVal = 0;
                     if (focusRelayIdx !== -1) {
                         relVal = (node && node.type === 2) ? ((activeBits >> focusRelayIdx) & 1) : activeBits;
+                    } else if (node && node.type === 3) {
+                        relVal = activeBits; // Use the value logged in field 5 (activeRelays2/RelayState)
                     }
                     relayState.push({x: xVal, y: relVal});
 
@@ -794,7 +872,7 @@
                                     let n = ((norm % 1440) + 1440) % 1440;
                                     if (n % 180 === 0) {
                                         let hh = Math.floor(n / 60);
-                                        return String(hh).padStart(2, '0') + ':00';
+                                        return hh + 'h';
                                     }
                                     return null;
                                 },
@@ -848,7 +926,7 @@
                                 ...commonOptions.scales,
                                 y: { min: 2.5, max: 4.5, border: { display: false }, grid: { color: 'rgba(255,255,255,0.2)' }, ticks: { color: '#ffa502', font: { weight: 'bold' } } },
                                 y1: { type: 'linear', display: true, position: 'right', min: -110, max: -20, grid: { drawOnChartArea: false }, ticks: { color: '#a29bfe', font: { weight: 'bold' } } },
-                                y2: { type: 'linear', display: true, position: 'right', min: -0.1, max: 1.1, grid: { drawOnChartArea: false }, ticks: { color: '#2ed573', callback: (v) => v === 1 ? 'ON' : (v === 0 ? 'OFF' : '') } }
+                                y2: { type: 'linear', display: true, position: 'right', min: -0.1, max: 1.1, grid: { drawOnChartArea: false }, ticks: { display: false } }
                             }
                         }
                     });
@@ -980,7 +1058,12 @@
                         </div>
                         <div class="macro-container">
                 `;
-                const children = state.nodes.filter(n => n.parent_did === ctrl.did || (n.did >= 0x20 && (n.did >> 4) === (ctrl.did >> 4) + 1)); 
+                const children = state.nodes.filter(n => {
+                    // Trust parent_did if explicitly reported by the node
+                    if (n.parent_did && n.parent_did !== 0) return n.parent_did === ctrl.did;
+                    // Fallback only for primary hubs (0x10, 0x20, etc) for legacy nodes
+                    return (ctrl.did % 16 === 0) && (n.did >= 0x20) && (n.did >> 4 === (ctrl.did >> 4) + 1);
+                });
                 
                 const ICONS = {
                     3: '🌱', 
@@ -1036,12 +1119,12 @@
                     `;
                     for(let i = 0; i < gt.count; i++) {
                         const did = gt.start + i;
-                        const s = state.nodes.find(n => n.did === did);
+                        const s = children.find(n => n.did === did);
                         let classes = 'sensor-mini-card';
                         let icon = gt.icon;
                         if (s) {
                             const sStatus = getNodeStatus(s);
-                            const isStale = isNodeOffline(s) || (s.last_seen_ms > 0 && isNodeOffline(s)); // Simplified check
+                            const isStale = isNodeOffline(s) || (s.last_seen_ms > 0 && isNodeOffline(s));
                             classes += ` led-glow-${sStatus} ${isNodeOffline(s) && s.last_seen_ms > 0 ? 'faded' : ''}`;
                         } else {
                             classes += ' led-glow-gray';
